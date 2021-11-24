@@ -53,7 +53,7 @@ BiomassMinimal = zeros(size(gMCSs));
 geneNotMinimal = cell(size(gMCSs));
 
 % Loop for all the gMCSs
-showprogress(0,'Check all gMCS')
+showprogress(0,'Check all gMCS');
 for i = 1:numel(gMCSs)
     showprogress(i/numel(gMCSs));
     gmcs = gMCSs{i};

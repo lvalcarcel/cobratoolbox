@@ -98,9 +98,9 @@ not_delete_cols = sum(act_rxnGeneMat, 1) ~= 0;
 act_rxnGeneMat = act_rxnGeneMat(:, not_delete_cols);
 G_ind_1 = model.genes(not_delete_cols);
 n_KO_1 = length(G_ind_1);
-tmp_G_1 = act_rxnGeneMat';
-G_1 = zeros(n_KO_1, n_rxns);
-G_1(:, rxns_1_gene) = tmp_G_1;
+% tmp_G_1 = act_rxnGeneMat';
+G_1 = spalloc(n_KO_1, n_rxns, sum(sum(act_rxnGeneMat)));
+G_1(:, rxns_1_gene) = act_rxnGeneMat';
 G_time(1, 1) = toc(time_b);
 
 % Step2 - Reactions with more than one gene and only OR rules
@@ -110,13 +110,15 @@ if printLevel >=1
 end
 time_c = tic;
 act_rxnGeneMat = rxnGeneMat(rxns_only_or, :);
-pos_rxns_only_or = find(rxns_only_or);
+% pos_rxns_only_or = find(rxns_only_or);
+G_ind_2 = cell(n_rxns_only_or,1);
 for i = 1:n_rxns_only_or
-    G_ind_2{i, 1} = model.genes(logical(act_rxnGeneMat(i, :)))';
+    G_ind_2{i} = reshape(model.genes(logical(act_rxnGeneMat(i, :))),1,[]);
 end
-tmp_G_2 = eye(n_rxns_only_or);
-G_2 = zeros(n_rxns_only_or, n_rxns);
-G_2(:, rxns_only_or) = tmp_G_2;
+% tmp_G_2 = eye(n_rxns_only_or);
+G_2 = spalloc(n_rxns_only_or, n_rxns, n_rxns_only_or);
+% G_2(:, rxns_only_or) = tmp_G_2;
+G_2(:, rxns_only_or) = eye(n_rxns_only_or);
 G_time(2, 1) = toc(time_c);
 
 % Reactions with more than one gene and only AND rules
@@ -130,24 +132,25 @@ not_delete_cols = sum(act_rxnGeneMat, 1) ~= 0;
 act_rxnGeneMat = act_rxnGeneMat(:, not_delete_cols);
 G_ind_3 = model.genes(not_delete_cols);
 n_KO_3 = length(G_ind_3);
-tmp_G_3 = act_rxnGeneMat';
-G_3 = zeros(n_KO_3, n_rxns);
-G_3(:, rxns_only_and) = tmp_G_3;
+% tmp_G_3 = act_rxnGeneMat';
+G_3 = spalloc(n_KO_3, n_rxns, sum(sum(act_rxnGeneMat)));
+% G_3(:, rxns_only_and) = tmp_G_3;
+G_3(:, rxns_only_and) = act_rxnGeneMat';
 G_time(3, 1) = toc(time_d);
 
 % Reactions with more than one gene and both OR and AND rules
 time_e = tic;
+pos_rxns_or_and = find(rxns_or_and);
 search_filename = [tmpFolderName filesep 'rxn_level_models' filesep 'rxn_level_' model_name '_and_or.mat'];
-if exist(search_filename,'file')
+if exist(search_filename, 'file')
     load(search_filename);
 else
-    pos_rxns_or_and = find(rxns_or_and);
     [models_or_and, rxnNumGenes_or_and] = GPR2models(model, pos_rxns_or_and, separate_isoform, numWorkers, printLevel);
     save(search_filename, 'models_or_and', 'rxnNumGenes_or_and');
 end
 
 search_filename_2 = [tmpFolderName filesep 'rxn_level_gMCSs' filesep 'rxn_level_gMCSs_' model_name '.mat'];
-if exist(search_filename_2,'file')
+if exist(search_filename_2, 'file')
     load(search_filename_2);
 else
     target_b = 1e-3;
@@ -160,7 +163,7 @@ else
     end
     for i = 1:n_rxns_or_and
         if printLevel >=1
-%             disp([num2str(i),' of ', num2str(n_rxns_or_and)]);
+            %             disp([num2str(i),' of ', num2str(n_rxns_or_and)]);
             showprogress(i/n_rxns_or_and);
         end
         search_filename_3 = [tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat'];
@@ -176,14 +179,14 @@ else
             DM = ~cellfun(@isempty, DM);
             n_DM = sum(DM);
             DM = rxns(find(DM));
-%             options.rxn_set = DM;
-% %             options.timelimit = timelimit;
-%             options.target_b = target_b;
-%             options.printLevel = 0;
+            %             options.rxn_set = DM;
+            % %             options.timelimit = timelimit;
+            %             options.target_b = target_b;
+            %             options.printLevel = 0;
             max_len_mcs = length(DM);
             [act_mcs, act_mcs_time] = calculateMCS(act_model, n_mcs, max_len_mcs,...
                 'rxn_set', DM,...
-                'timelimit', timelimit,... 
+                'timelimit', timelimit,...
                 'target_b', target_b,...
                 'printLevel', 0);
             mcs{i, 1} = act_mcs;
@@ -191,84 +194,147 @@ else
             save(search_filename_3, 'act_mcs', 'act_mcs_time');
         end
     end
-    save(search_filename_2);
+    save(search_filename_2, 'mcs', 'mcs_time');
 end
 
-k = 0;
-for i = 1:n_rxns_or_and
-    load([tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat']);
-    n_act_mcs = length(act_mcs);
+% % time_e = tic();
+% k = 0;
+% n_act_mcs = sum(cellfun(@numel, mcs));
+% G_4 = spalloc(n_act_mcs, n_rxns, n_act_mcs);
+% G_ind_4 = cell(n_act_mcs, 1);
+% for i = 1:n_rxns_or_and
+% %     load([tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat'], 'act_mcs');
+%     act_mcs = mcs{i, 1};
+%     n_act_mcs = length(act_mcs);
+%     
+%     for j = 1:n_act_mcs
+%         act_G_ind = act_mcs{j};
+%         if ~iscell(act_G_ind) && isnan(act_G_ind)
+%             error('MCS for a reaction in rxns_or_and subset is badly calculated')
+%         else
+%             act_G_ind = cellfun(@strrep, act_G_ind, repmat({'DM_'}, length(act_G_ind), 1), repmat({''}, length(act_G_ind), 1), 'UniformOutput', false);
+%             act_G_ind = cellfun(@strtok, act_G_ind, repmat({separate_isoform}, length(act_G_ind), 1), 'UniformOutput', false);
+%             k = k+1;
+% %             G_4(k, :) = zeros(1, n_rxns);
+%             G_4(k, pos_rxns_or_and(i)) = 1;
+%             G_ind_4{k, 1} = act_G_ind';
+%         end
+%     end
+% end
+% G_time(4, 1) = toc(time_e);
 
-    for j = 1:n_act_mcs
-        act_G_ind = act_mcs{j};
-        if ~iscell(act_G_ind) && isnan(act_G_ind)
-        else
-            act_G_ind = cellfun(@strrep, act_G_ind, repmat({'DM_'}, length(act_G_ind), 1), repmat({''}, length(act_G_ind), 1), 'UniformOutput', false);
-            act_G_ind = cellfun(@strtok, act_G_ind, repmat({separate_isoform}, length(act_G_ind), 1), 'UniformOutput', false);
-            k = k+1;
-            G_4(k, :) = zeros(1, n_rxns);
-            G_4(k, pos_rxns_or_and(i)) = 1;
-            G_ind_4{k, 1} = act_G_ind';
-        end
-    end
-end
+% new way (more efficient?)
+% time_e = tic();
+% k = 0;
+n_act_mcs = sum(cellfun(@numel, mcs));
+
+% G_ind_4_bis = cell(n_act_mcs, 1);
+% all_act_mcs = cell(n_rxns_or_and,1);
+
+% all mcs for the reactions are stored in mcs array
+G_ind_4 = vertcat(mcs{:});
+G_ind_4 = cellfun(@transpose, G_ind_4, 'UniformOutput', false);
+G_ind_4 = cellfun(@strrep, G_ind_4, repmat({'DM_'}, length(G_ind_4), 1), repmat({''}, length(G_ind_4), 1), 'UniformOutput', false);
+G_ind_4 = cellfun(@strtok, G_ind_4, repmat({separate_isoform}, length(G_ind_4), 1), 'UniformOutput', false); 
+G_ind_4 = cellfun(@sort, G_ind_4, 'UniformOutput', false);
+% G_ind_4_bis{end}
+
+G_4 = spalloc(n_act_mcs, n_rxns, n_act_mcs);
+G_4(sub2ind(size(G_4),(1:length(G_ind_4))',repelem(pos_rxns_or_and,cellfun(@numel, mcs)))) = 1;
+
+% isequal(G_ind_4_bis, G_ind_4)
+% isequal(G_4_bis, G_4)
+
+
+% n_act_mcs = length(act_mcs);
+% for j = 1:n_act_mcs
+%     act_G_ind = act_mcs{j};
+%     if ~iscell(act_G_ind) && isnan(act_G_ind)
+%         error('MCS for a reaction in rxns_or_and subset is badly calculated')
+%     else
+%         act_G_ind = cellfun(@strrep, act_G_ind, repmat({'DM_'}, length(act_G_ind), 1), repmat({''}, length(act_G_ind), 1), 'UniformOutput', false);
+%         act_G_ind = cellfun(@strtok, act_G_ind, repmat({separate_isoform}, length(act_G_ind), 1), 'UniformOutput', false);
+%         k = k+1;
+%         G_4_bis(k, :) = zeros(1, n_rxns);
+%         G_4_bis(k, pos_rxns_or_and(i)) = 1;
+%         G_ind_4_bis{k, 1} = act_G_ind';
+%     end
+% end
+
 G_time(4, 1) = toc(time_e);
+% G_time
+
 
 % Delete isoforms in order to work at the gene level
 time_f = tic;
-G_ind_1 = cellfun(@strtok, G_ind_1, repmat({separate_isoform}, length(G_ind_1), 1), 'UniformOutput', false);
+if ~isempty(separate_isoform)
+    G_ind_1 = cellfun(@strtok, G_ind_1, repmat({separate_isoform}, length(G_ind_1), 1), 'UniformOutput', false);
 
-n_KO_2 = length(G_ind_2);
-for i = 1:n_KO_2
-    act_G_ind_2 = G_ind_2{i};
-    act_G_ind_2 = cellfun(@strtok, act_G_ind_2, repmat({separate_isoform}, 1, length(act_G_ind_2)), 'UniformOutput', false);
-    G_ind_2{i} = unique(act_G_ind_2);
+    n_KO_2 = length(G_ind_2);
+    for i = 1:n_KO_2
+        act_G_ind_2 = G_ind_2{i};
+        act_G_ind_2 = cellfun(@strtok, act_G_ind_2, repmat({separate_isoform}, 1, length(act_G_ind_2)), 'UniformOutput', false);
+        G_ind_2{i} = unique(act_G_ind_2);
+    end
+    G_ind_3 = cellfun(@strtok, G_ind_3, repmat({separate_isoform}, length(G_ind_3), 1), 'UniformOutput', false);
 end
-G_ind_3 = cellfun(@strtok, G_ind_3, repmat({separate_isoform}, length(G_ind_3), 1), 'UniformOutput', false);
 
 % Delete repeats
 if printLevel >=1
     disp('G MATRIX - Delete Repeats');
 end
-tmp_G = [];
-try tmp_G = [tmp_G; G_1]; end
-try tmp_G = [tmp_G; G_2]; end
-try tmp_G = [tmp_G; G_3]; end
-try tmp_G = [tmp_G; G_4]; end
-tmp_G_ind = [];
-try tmp_G_ind = [tmp_G_ind; G_ind_1]; end
-try tmp_G_ind = [tmp_G_ind; G_ind_2]; end
-try tmp_G_ind = [tmp_G_ind; G_ind_3]; end
-try tmp_G_ind = [tmp_G_ind; G_ind_4]; end
+% tmp_G = [];
+% try tmp_G = [tmp_G; G_1]; end
+% try tmp_G = [tmp_G; G_2]; end
+% try tmp_G = [tmp_G; G_3]; end
+% try tmp_G = [tmp_G; G_4]; end
+% tmp_G_ind = [];
+% try tmp_G_ind = [tmp_G_ind; G_ind_1]; end
+% try tmp_G_ind = [tmp_G_ind; G_ind_2]; end
+% try tmp_G_ind = [tmp_G_ind; G_ind_3]; end
+% try tmp_G_ind = [tmp_G_ind; G_ind_4]; end
+% n_tmp_G_ind = length(tmp_G_ind);
+tmp_G = spalloc(0,n_rxns,0);
+tmp_G = [tmp_G; G_1];
+tmp_G = [tmp_G; G_2];
+tmp_G = [tmp_G; G_3];
+tmp_G = [tmp_G; G_4];
+tmp_G_ind = cell(0,1);
+tmp_G_ind = [tmp_G_ind; G_ind_1];
+tmp_G_ind = [tmp_G_ind; G_ind_2];
+tmp_G_ind = [tmp_G_ind; G_ind_3];
+tmp_G_ind = [tmp_G_ind; G_ind_4];
 n_tmp_G_ind = length(tmp_G_ind);
 
-k = 0;
-clear G G_ind
-for i = 1:n_tmp_G_ind
-    if i == 1
+% k = 0;
+clear G G_ind % no existen, lo comento
+% G = spalloc(0,n_rxns,0);
+% G_ind = cell(0,1);
+% for i = 1:n_tmp_G_ind
+%     if i == 1
+k = 1;
+G(k, :) = tmp_G(1, :);
+if ~iscell(tmp_G_ind{1})
+    G_ind{k, 1} = tmp_G_ind(1);
+else
+    G_ind{k, 1} = sort(tmp_G_ind{1});
+end
+for i = 2:n_tmp_G_ind
+    if ~iscell(tmp_G_ind{i})
+        act_G_ind = tmp_G_ind(i);
+    else
+        act_G_ind = sort(tmp_G_ind{i});
+    end
+    
+    pos_equal = cellfun(@isequal, G_ind, repmat({act_G_ind}, length(G_ind), 1));
+    if sum(pos_equal) > 0
+        G(pos_equal, :) = G(pos_equal, :) + tmp_G(i, :);
+    else
         k = k+1;
         G(k, :) = tmp_G(i, :);
-        if ~iscell(tmp_G_ind{i})
-            G_ind{k, 1} = tmp_G_ind(i);
-        else
-            G_ind{k, 1} = sort(tmp_G_ind{i});
-        end
-    else
-        if ~iscell(tmp_G_ind{i})
-            act_G_ind = tmp_G_ind(i);
-        else
-            act_G_ind = sort(tmp_G_ind{i});
-        end
-
-        pos_equal = cellfun(@isequal, G_ind, repmat({act_G_ind}, length(G_ind), 1));
-        if sum(pos_equal) > 0
-            G(pos_equal, :) = G(pos_equal, :) + tmp_G(i, :);
-        else
-            k = k+1;
-            G(k, :) = tmp_G(i, :);
-            G_ind{k, 1} = act_G_ind;
-        end
+        G_ind{k, 1} = act_G_ind;
     end
+    %     end
 end
 
 % Fill the G matrix with reactions which are knocked out by a given KO
@@ -298,6 +364,7 @@ if printLevel >=1
 end
 k = 0;
 n_genes_KO = cellfun(@length, G_ind);
+related = zeros(0,2);
 for i = 2:n_G_ind
     act_G_ind = G_ind(i);
     n_act_G_ind = length(act_G_ind{:});
@@ -317,12 +384,14 @@ for i = 2:n_G_ind
     end
 end
 
-if exist('related')
+if size(related)>0
+    %     if exist('related', 'var')
     un_related = unique(related(:, 1));
     n_un_related = length(un_related);
     for i = 1:n_un_related
         act_KO = un_related(i);
-        ind = find(related(:, 1) == act_KO);
+        %         ind = find(related(:, 1) == act_KO);
+        ind = related(:, 1) == act_KO;
         act_related = related(ind, 2);
         all_genes = [G_ind{act_related}];
         un_all_genes = unique(all_genes);
@@ -335,7 +404,8 @@ end
 
 final_filename = [pwd filesep 'G_' model_name '.mat'];
 G_time(5, 1) = toc(time_f)+ini_time;
-save(final_filename, 'G', 'G_ind', 'related', 'n_genes_KO', 'G_time');
+G_rxns = model.rxns;
+save(final_filename, 'G', 'G_ind', 'G_rxns', 'related', 'n_genes_KO', 'G_time');
 if printLevel >=1
     disp('The G Matrix has been successfully calculated');
 end

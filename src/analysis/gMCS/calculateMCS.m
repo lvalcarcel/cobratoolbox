@@ -94,7 +94,7 @@ addParameter(p, 'printLevel', 1, @(x)isnumeric(x)&&isscalar(x));
 parse(p, model_struct, n_mcs, max_len_mcs, varargin{:});
 model_struct = p.Results.model_struct;
 n_mcs = p.Results.n_mcs;
-max_len_mcs = p.Results.max_len_gmcs;
+max_len_mcs = p.Results.max_len_mcs;
 KO = p.Results.KO;
 rxn_set = p.Results.rxn_set;
 target_b = p.Results.target_b;
@@ -139,8 +139,8 @@ if ~isempty(rxn_set)
 end
 
 if isempty(KO)
-% ENUMERATE MCSs
-% Define variables
+    % ENUMERATE MCSs
+    % Define variables
     var.u = 1:n_mets;
     var.vp = var.u(end)+1:var.u(end)+n_K_ind;
     var.w = var.vp(end)+1:var.vp(end)+1;
@@ -149,15 +149,16 @@ if isempty(KO)
     n_vars = var.zw(end);
     var_group.v = [var.vp var.w];
     var_group.z = [var.zp var.zw];
-
-% Define constraints
+    
+    % Define constraints
     cons.Ndual = 1:size(S, 2);
     cons.forceBioCons = cons.Ndual(end)+1:cons.Ndual(end)+1;
     cons.forceLength = cons.forceBioCons(end)+1:cons.forceBioCons(end)+1;
     n_cons = cons.forceLength(end);
-
-% Cplex - A matrix
-    A = sparse(zeros(n_cons, n_vars));
+    
+    % Cplex - A matrix
+    %     A = sparse(zeros(n_cons, n_vars));
+    A = spalloc(n_cons, n_vars, sum(sum(S~=0)) + sum(sum(K~=0)) + sum(sum(t~=0))); % memory efficient
     A(cons.Ndual, var.u) = S';
     A(cons.Ndual, var.vp) = K';
     A(cons.Ndual, var.w) = -t;
@@ -165,8 +166,8 @@ if isempty(KO)
     if forceLength == 1
         A(cons.forceLength, var.zp) = 1;
     end
-
-% Cplex - rhs and lhs vectors
+    
+    % Cplex - rhs and lhs vectors
     rhs = zeros(n_cons, 1);
     rhs(cons.Ndual, 1) = inf;
     rhs(cons.forceBioCons) = -c;
@@ -179,8 +180,8 @@ if isempty(KO)
     if forceLength == 1
         lhs(cons.forceLength) = 1;
     end
-
-% Cplex - ub and lb vectors
+    
+    % Cplex - ub and lb vectors
     ub(var.u, 1) = inf;
     ub(var.vp) = inf;
     ub(var.w) = inf;
@@ -191,47 +192,47 @@ if isempty(KO)
     lb(var.w) = 0;
     lb(var.zp) = 0;
     lb(var.zw) = 0;
-
-% Cplex - obj vector
+    
+    % Cplex - obj vector
     obj(var.u, 1) = 0;
     obj(var.vp) = 0;
     obj(var.w) = 0;
     obj(var.zp) = 1;
     obj(var.zw) = 0;
-
-% Cplex - ctype vector
+    
+    % Cplex - ctype vector
     ctype(var.u) = 'C';
     ctype(var.vp) = 'C';
     ctype(var.w) = 'C';
     ctype(var.zp) = 'B';
     ctype(var.zw) = 'B';
-
-% Cplex - sense of the optimization
+    
+    % Cplex - sense of the optimization
     sense = 'minimize';
-
-% Cplex - Introduce all data in a Cplex structure
+    
+    % Cplex - Introduce all data in a Cplex structure
     cplex = Cplex('MCS');
     Model = struct();
     [Model.A, Model.rhs, Model.lhs, Model.ub, Model.lb, Model.obj, Model.ctype, Model.sense] = deal(A, rhs, lhs, ub, lb, obj, ctype, sense);
     cplex.Model = Model;
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 1  -->  v >= alpha
     for ivar = 1:length(var_group.z)
         a = zeros(n_vars, 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 0, a, 'G', alpha);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 0  -->  v <= 0
     for ivar = 1:length(var_group.z)
         a = zeros(n_vars, 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 1, a, 'L', 0);
     end
-
-% Cplex Parameters
+    
+    % Cplex Parameters
     sP = struct();
     [sP.mip.tolerances.integrality, sP.mip.strategy.heuristicfreq, sP.mip.strategy.rinsheur] = deal(integrality_tolerance, 1000, 50);
     [sP.emphasis.mip, sP.output.clonelog, sP.timelimit, sP.threads] = deal(4, -1, max(10, timelimit), numWorkers);
@@ -242,12 +243,12 @@ if isempty(KO)
         sP.preprocessing.presolve, sP.preprocessing.reduce,..., ...
         sP.preprocessing.relax, sP.preprocessing.symmetry] = deal(50, 1, 2, 1, 1, 50, 1, 50, 1, 3, 1, 1);
     cplex = setCplexParam(cplex, sP);
-
+    
     if printLevel == 0
         cplex.DisplayFunc = [];
     end
-
-% Calculation of MCSs
+    
+    % Calculation of MCSs
     mcs_time{1, 1} = '------ TIMING ------';
     mcs_time{1, 2} = '--- MCSs ---';
     i = 0;
@@ -294,16 +295,19 @@ if isempty(KO)
                 return;
             end
         end
+        if printLevel > 0
+            disp(['Number of MCS saved: ' num2str(length(mcs))]);
+        end
         try save('tmp.mat', 'mcs', 'mcs_time'); end
         try largest_mcs = max(cellfun(@length, mcs)); end
     end
 else
-% CALCULATE MCSs WITH A GIVEN KNOCKOUT
-% Select the row(s) in K_ind related to the KO under study
+    % CALCULATE MCSs WITH A GIVEN KNOCKOUT
+    % Select the row(s) in K_ind related to the KO under study
     tmp = repmat({KO}, n_K_ind, 1);
     dp = cellfun(@isequal, K_ind, tmp);
-
-% Define variables
+    
+    % Define variables
     var.u = 1:n_mets;
     var.vp = var.u(end)+1:var.u(end)+n_K_ind;
     var.w = var.vp(end)+1:var.vp(end)+1;
@@ -319,17 +323,18 @@ else
     var_group.z = [var.zp var.zw];
     var_group.eps = [var.epsp var.epsw];
     var_group.del = [var.delp var.delw];
-
-% Define constraints
+    
+    % Define constraints
     cons.Ndual = 1:size(S, 2);
     cons.forceBioCons = cons.Ndual(end)+1:cons.Ndual(end)+1;
     cons.forceKO = cons.forceBioCons(end)+1:cons.forceBioCons(end)+1;
     cons.linearComb = cons.forceKO(end)+1:cons.forceKO(end)+size(S, 1)+size(K, 1)+size(t, 2);
     cons.forceLength = cons.linearComb(end)+1:cons.linearComb(end)+1;
     n_cons = cons.forceLength(end);
-
-% Cplex - A matrix
-    A = sparse(zeros(n_cons, n_vars));
+    
+    % Cplex - A matrix
+    %     A = sparse(zeros(n_cons, n_vars));
+    A = spalloc(n_cons, n_vars, sum(sum(S~=0)) + sum(sum(K~=0)) + sum(sum(t~=0))); % memory efficient
     A(cons.Ndual, var.u) = S';
     A(cons.Ndual, var.vp) = K';
     A(cons.Ndual, var.w) = -t;
@@ -341,8 +346,8 @@ else
     if forceLength == 1
         A(cons.forceLength, var.zp) = 1;
     end
-
-% Cplex - rhs and lhs vectors
+    
+    % Cplex - rhs and lhs vectors
     rhs = zeros(n_cons, 1);
     rhs(cons.Ndual, 1) = inf;
     rhs(cons.forceBioCons) = -c;
@@ -359,8 +364,8 @@ else
     if forceLength == 1
         lhs(cons.forceLength) = 1;
     end
-
-% Cplex - ub and lb vectors
+    
+    % Cplex - ub and lb vectors
     ub(var.u, 1) = inf;
     ub(var.vp) = inf;
     ub(var.w) = inf;
@@ -382,8 +387,8 @@ else
     lb(var.delw) = 0;
     lb(var.x) = 0;
     lb(var.x(end)) = phi;
-
-% Cplex - obj vector
+    
+    % Cplex - obj vector
     obj(var.u, 1) = 0;
     obj(var.vp) = 0;
     obj(var.w) = 0;
@@ -394,8 +399,8 @@ else
     obj(var.delp) = 0;
     obj(var.delw) = 0;
     obj(var.x) = 0;
-
-% Cplex - ctype vector
+    
+    % Cplex - ctype vector
     ctype(var.u) = 'C';
     ctype(var.vp) = 'C';
     ctype(var.w) = 'C';
@@ -406,49 +411,49 @@ else
     ctype(var.delp) = 'C';
     ctype(var.delw) = 'C';
     ctype(var.x) = 'C';
-
-% Cplex - sense of the optimization
+    
+    % Cplex - sense of the optimization
     sense = 'minimize';
-
-% Cplex - Introduce all data in a Cplex structure
+    
+    % Cplex - Introduce all data in a Cplex structure
     cplex = Cplex('MCS');
     Model = struct();
     [Model.A, Model.rhs, Model.lhs, Model.ub, Model.lb, Model.obj, Model.ctype, Model.sense] = deal(A, rhs, lhs, ub, lb, obj, ctype, sense);
     cplex.Model = Model;
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 1  -->  v >= alpha
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 0, a, 'G', alpha);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 0  -->  v <= 0
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 1, a, 'L', 0);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 1  -->  epsilon <= 0
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.eps(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 0, a, 'L', 0);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 0  -->  epsilon <= M
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.eps(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 1, a, 'L', M);
     end
-
-% Cplex Parameters
+    
+    % Cplex Parameters
     sP = struct();
     [sP.mip.tolerances.integrality, sP.mip.strategy.heuristicfreq, sP.mip.strategy.rinsheur] = deal(integrality_tolerance, 1000, 50);
     [sP.emphasis.mip, sP.output.clonelog, sP.timelimit, sP.threads] = deal(4, -1, max(10, timelimit), numWorkers);
@@ -462,8 +467,8 @@ else
     if printLevel == 0
         cplex.DisplayFunc = [];
     end
-
-% Calculation of MCSs
+    
+    % Calculation of MCSs
     mcs_time{1, 1} = '------ TIMING ------';
     mcs_time{1, 2} = '--- MCSs ---';
     i = 0;
@@ -509,6 +514,9 @@ else
                 mcs_time{n_time+1, 2} = toc(time_aa);
                 return;
             end
+        end
+        if printLevel > 0
+            disp(['Number of MCS saved: ' num2str(length(mcs))]);
         end
         try save('tmp.mat', 'mcs', 'mcs_time'); end
         try largest_mcs = max(cellfun(@length, mcs)); end

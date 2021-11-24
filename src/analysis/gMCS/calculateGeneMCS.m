@@ -22,16 +22,16 @@ function [gmcs, gmcs_time] = calculateGeneMCS(model_name, model_struct, n_gmcs, 
 %                        (default = [], all genes)
 %    target_b:           Desired activity level of the metabolic task to be
 %                        disrupted. (default = 1e-3)
-%    nutrientGMCS:       Boolean variable.  0 to calculate GeneMCS, 1 to 
-%                        calculate MCS containing genes and nutrients, 
+%    nutrientGMCS:       Boolean variable.  0 to calculate GeneMCS, 1 to
+%                        calculate MCS containing genes and nutrients,
 %                        known as ngMCS. (default = false)
 %    exchangeRxns:       Cell array containing the set of reactions to be
 %                        included as inputs of nutrients from the cell
 %                        environment / culture medium. (default = [], which
 %                        are all reactions with only one 1 metabolite
 %                        consiedered as input for the model)
-%    onlyNutrients:      Boolean variable.  1 to calculate MCS only using 
-%                        selected KO and nutrients, 0 to use everything. 
+%    onlyNutrients:      Boolean variable.  1 to calculate MCS only using
+%                        selected KO and nutrients, 0 to use everything.
 %                        If there is no KO selected, it is set to false.
 %                        (default = false)
 %    separate_transcript:Character used to separate
@@ -45,14 +45,14 @@ function [gmcs, gmcs_time] = calculateGeneMCS(model_name, model_struct, n_gmcs, 
 %                             - gene 10005.1
 %                             - gene 10005.2    ==>    gene 10005
 %                             - gene 10005.3
-%    forceLength:        1 if the constraint limiting the length of the 
+%    forceLength:        1 if the constraint limiting the length of the
 %                        gMCSs is to be active (recommended for
-%                        enumerating low order gMCSs), 0 otherwise 
+%                        enumerating low order gMCSs), 0 otherwise
 %                        (default = 1)
-%    timelimit:          Time limit for the calculation of gMCSs each time 
+%    timelimit:          Time limit for the calculation of gMCSs each time
 %                        the solver is called. (default = 1e75)
-%    numWorkers:         Integer: is the maximun number of workers used 
-%                        by Cplex and GPR2models. 0 = automatic, 
+%    numWorkers:         Integer: is the maximun number of workers used
+%                        by Cplex and GPR2models. 0 = automatic,
 %                        1 = sequential, > 1 = parallel. (default = 0)
 %    printLevel:         Integer. 1 if the process is wanted to be shown
 %                        on the screen, 0 otherwise. (default = 1)
@@ -68,7 +68,7 @@ function [gmcs, gmcs_time] = calculateGeneMCS(model_name, model_struct, n_gmcs, 
 %                                           'KO' = '6240', ...
 %                                           'gene_set' = {'2987'; '6241'},  ...
 %                                           'timelimit' = 300,  ...
-%                                           'target_b' = 1e-4, 
+%                                           'target_b' = 1e-4,
 %                                           'separate_transcript' = '.',  ...
 %                                           'forceLength' = 0, ...
 %                                           'printLevel' = 0)
@@ -152,8 +152,14 @@ end
 
 % Load or Build the G Matrix
 G_file = [pwd filesep 'G_' model_name '.mat'];
-if exist(G_file) == 2
-    load(G_file)
+if exist(G_file, 'file') == 2
+    load(G_file, 'G', 'G_ind', 'G_rxns', 'related', 'n_genes_KO', 'G_time');
+    % check the fields to ensure is you can use it in the function
+    assert(size(model_struct.S,2) == size(G,2), 'G matrix and model differ in number of reactions.');
+    if exist('G_rxns', 'var')
+        assert(isequal(model_struct.rxns, G_rxns), 'G matrix is not the same, different reaction order in the G matrix and the model.');
+    end
+    assert(all(ismember([G_ind{:}], model_struct.genes)), 'G matrix is not the same, different reaction order in the G matrix and the model.');
 else
     [G, G_ind, related, n_genes_KO, G_time] = buildGmatrix(model_name, model_struct, separate_transcript, numWorkers, printLevel);
     assert(size(G,2) == numel(model_struct.rxns));
@@ -202,14 +208,20 @@ if ~isempty(gene_set)
         related = related(tmp_related_1, :);
         n_relations = size(related, 1);
         pos_set(:, 2) = 1:length(pos_set);
-        tmp_related = related(:);
-        n_tmp_related = length(tmp_related);
-        for i = 1:n_tmp_related
-            pos = find(pos_set(:, 1) == tmp_related(i));
-            tmp_related(i) = pos_set(pos, 2);
-        end
-        related = tmp_related(1:n_tmp_related/2);
-        related(:, 2) = tmp_related(n_tmp_related/2+1:end);
+%         tmp_related = related(:);
+%         n_tmp_related = length(tmp_related);
+%         for i = 1:n_tmp_related
+%             pos = find(pos_set(:, 1) == tmp_related(i));
+%             tmp_related(i) = pos_set(pos, 2);
+%         end
+%         related = tmp_related(1:n_tmp_related/2);
+%         related(:, 2) = tmp_related(n_tmp_related/2+1:end);
+%         related2 = related;
+        tmp_related = related(:); % increase performance
+        [~, idx_tmp_related] = ismember(tmp_related, pos_set(:, 1));
+        tmp_related = pos_set(idx_tmp_related, 2);
+        related = reshape(tmp_related,[],2);
+%         isequal(related, related2)
     end
 end
 
@@ -222,45 +234,48 @@ t = zeros(n_rxns, 1);
 t(nbio) = 1;
 
 if isempty(KO)
-% ENUMERATE gMCSs
-% Define variables
+    % ENUMERATE gMCSs
+    % Define variables
     var.u = 1:n_mets;
-    var.vp = var.u(end)+1:var.u(end)+n_poss_KO;
-    var.w = var.vp(end)+1:var.vp(end)+1;
-    var.zp = var.w(end)+1:var.w(end)+n_poss_KO;
-    var.zw = var.zp(end)+1:var.zp(end)+1;
+    var.vp = var.u(end) + (1:n_poss_KO);
+    var.w = var.vp(end) + (1:1);
+    var.zp = var.w(end) + (1:n_poss_KO);
+    var.zw = var.zp(end) + (1:1);
     n_vars = var.zw(end);
     var_group.v = [var.vp var.w];
     var_group.z = [var.zp var.zw];
-
-% Define constraints
+    
+    % Define constraints
     cons.Ndual = 1:size(S, 2);
-    cons.forceBioCons = cons.Ndual(end)+1:cons.Ndual(end)+1;
+    cons.forceBioCons = cons.Ndual(end) + (1:1);
     if n_relations > 0
-        cons.relations = cons.forceBioCons(end)+1:cons.forceBioCons(end)+n_relations;
-        cons.forceLength = cons.relations(end)+1:cons.relations(end)+1;
+        cons.relations = cons.forceBioCons(end) + (1:n_relations);
+        cons.forceLength = cons.relations(end) + (1:1);
     else
-        cons.forceLength = cons.forceBioCons(end)+1:cons.forceBioCons(end)+1;
+        cons.forceLength = cons.forceBioCons(end) + (1:1);
     end
     n_cons = cons.forceLength(end);
-
-% Cplex - A matrix
-    A = sparse(zeros(n_cons, n_vars));
+    
+    % Cplex - A matrix
+    %     A = sparse(zeros(n_cons, n_vars));
+    A = spalloc(n_cons, n_vars, sum(sum(G~=0)) + sum(sum(S~=0)) + sum(sum(t~=0))); % memory efficient
     A(cons.Ndual, var.u) = S';
     A(cons.Ndual, var.vp) = G';
     A(cons.Ndual, var.w) = -t;
     A(cons.forceBioCons, var.w) = -target_b;
     if n_relations > 0
-        for i = 1:n_relations
-            A(cons.relations(i), var.zp(related(i, 1))) = -1;
-            A(cons.relations(i), var.zp(related(i, 2))) = 1;
-        end
+        %         for i = 1:n_relations
+        %             A(cons.relations(i), var.zp(related(i, 1))) = -1;
+        %             A(cons.relations(i), var.zp(related(i, 2))) = 1;
+        %         end
+        A(sub2ind(size(A), cons.relations, var.zp(related(:, 1)))) = -1;
+        A(sub2ind(size(A), cons.relations, var.zp(related(:, 2)))) = +1;
     end
     if forceLength == 1
         A(cons.forceLength, var.zp) = n_genes_KO;
     end
-
-% Cplex - rhs and lhs vectors
+    
+    % Cplex - rhs and lhs vectors
     rhs = zeros(n_cons, 1);
     rhs(cons.Ndual, 1) = inf;
     rhs(cons.forceBioCons) = -c;
@@ -275,8 +290,8 @@ if isempty(KO)
     if forceLength == 1
         lhs(cons.forceLength) = 1;
     end
-
-% Cplex - ub and lb vectors
+    
+    % Cplex - ub and lb vectors
     ub(var.u, 1) = inf;
     ub(var.vp) = inf;
     ub(var.w) = inf;
@@ -287,47 +302,47 @@ if isempty(KO)
     lb(var.w) = 0;
     lb(var.zp) = 0;
     lb(var.zw) = 0;
-
-% Cplex - obj vector
+    
+    % Cplex - obj vector
     obj(var.u, 1) = 0;
     obj(var.vp) = 0;
     obj(var.w) = 0;
     obj(var.zp) = n_genes_KO;
     obj(var.zw) = 0;
-
-% Cplex - ctype vector
+    
+    % Cplex - ctype vector
     ctype(var.u) = 'C';
     ctype(var.vp) = 'C';
     ctype(var.w) = 'C';
     ctype(var.zp) = 'B';
     ctype(var.zw) = 'B';
-
-% Cplex - sense of the optimization
+    
+    % Cplex - sense of the optimization
     sense = 'minimize';
-
-% Cplex - Introduce all data in a Cplex structure
+    
+    % Cplex - Introduce all data in a Cplex structure
     cplex = Cplex('geneMCS');
     Model = struct();
     [Model.A, Model.rhs, Model.lhs, Model.ub, Model.lb, Model.obj, Model.ctype, Model.sense] = deal(A, rhs, lhs, ub, lb, obj, ctype, sense);
     cplex.Model = Model;
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 1  -->  v >= alpha
     for ivar = 1:length(var_group.z)
         a = zeros(n_vars, 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 0, a, 'G', alpha);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 0  -->  v <= 0
     for ivar = 1:length(var_group.z)
         a = zeros(n_vars, 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 1, a, 'L', 0);
     end
-
-% Cplex Parameters
+    
+    % Cplex Parameters
     [sP.mip.tolerances.integrality, sP.mip.strategy.heuristicfreq, sP.mip.strategy.rinsheur] = deal(integrality_tolerance, 1000, 50);
     [sP.emphasis.mip, sP.output.clonelog, sP.timelimit, sP.threads] = deal(4, -1, max(10, timelimit), numWorkers);
     [sP.preprocessing.aggregator, sP.preprocessing.boundstrength, ...
@@ -340,8 +355,8 @@ if isempty(KO)
     if printLevel == 0
         cplex.DisplayFunc = [];
     end
-
-% Calculation of gMCSs
+    
+    % Calculation of gMCSs
     i = 0;
     k = 0;
     n_time = size(gmcs_time, 1);
@@ -388,18 +403,20 @@ if isempty(KO)
                 return;
             end
         end
-        try disp(['Number of gMCS saved: ' num2str(length(gmcs))]); end
+        if printLevel > 0
+            disp(['Number of gMCS saved: ' num2str(length(gmcs))]); 
+        end
         try save('tmp.mat', 'gmcs', 'gmcs_time'); end
         try largest_gmcs = max(cellfun(@length, gmcs)); end
     end
 else
-% CALCULATE gMCSs WITH A GIVEN KNOCKOUT
-% Select the row(s) in G_ind related to the KO under study
+    % CALCULATE gMCSs WITH A GIVEN KNOCKOUT
+    % Select the row(s) in G_ind related to the KO under study
     n_G_ind = length(G_ind);
     tmp = repmat({KO}, n_G_ind, 1);
     dp = cellfun(@ismember, tmp, G_ind);
-
-% Define variables
+    
+    % Define variables
     var.u = 1:n_mets;
     var.vp = var.u(end)+1:var.u(end)+n_G_ind;
     var.w = var.vp(end)+1:var.vp(end)+1;
@@ -415,8 +432,8 @@ else
     var_group.z = [var.zp var.zw];
     var_group.eps = [var.epsp var.epsw];
     var_group.del = [var.delp var.delw];
-
-% Define constraints
+    
+    % Define constraints
     cons.Ndual = 1:size(S, 2);
     cons.forceBioCons = cons.Ndual(end)+1:cons.Ndual(end)+1;
     cons.forceKO = cons.forceBioCons(end)+1:cons.forceBioCons(end)+1;
@@ -428,9 +445,10 @@ else
         cons.forceLength = cons.linearComb(end)+1:cons.linearComb(end)+1;
     end
     n_cons = cons.forceLength(end);
-
-% Cplex - A matrix
-    A = sparse(zeros(n_cons, n_vars));
+    
+    % Cplex - A matrix
+    % A = sparse(zeros(n_cons, n_vars));
+    A = spalloc(n_cons, n_vars, sum(sum(G~=0)) + sum(sum(S~=0)) + sum(sum(t~=0))); % memory efficient
     A(cons.Ndual, var.u) = S';
     A(cons.Ndual, var.vp) = G';
     A(cons.Ndual, var.w) = -t;
@@ -440,16 +458,18 @@ else
     A(cons.linearComb, [var.epsp var.epsw]) = [sparse(zeros(n_mets, length(var.vp)+length(var.w))); -speye(length(var.vp)+length(var.w))];
     A(cons.linearComb, [var.delp var.delw]) = -[sparse(zeros(n_mets, length(var.vp)+length(var.w))); -speye(length(var.vp)+length(var.w))];
     if n_relations > 0
-        for i = 1:n_relations
-            A(cons.relations(i), var.zp(related(i, 1))) = -1;
-            A(cons.relations(i), var.zp(related(i, 2))) = 1;
-        end
+        %         for i = 1:n_relations
+        %             A(cons.relations(i), var.zp(related(i, 1))) = -1;
+        %             A(cons.relations(i), var.zp(related(i, 2))) = 1;
+        %         end
+        A(sub2ind(size(A), cons.relations, var.zp(related(:, 1)))) = -1;
+        A(sub2ind(size(A), cons.relations, var.zp(related(:, 2)))) = +1;
     end
     if forceLength == 1
         A(cons.forceLength, var.zp) = 1;
     end
-
-% Cplex - rhs and lhs vectors
+    
+    % Cplex - rhs and lhs vectors
     rhs = zeros(n_cons, 1);
     rhs(cons.Ndual, 1) = inf;
     rhs(cons.forceBioCons) = -c;
@@ -468,8 +488,8 @@ else
     if forceLength == 1
         lhs(cons.forceLength) = 1;
     end
-
-% Cplex - ub and lb vectors
+    
+    % Cplex - ub and lb vectors
     ub(var.u, 1) = inf;
     ub(var.vp) = inf;
     ub(var.w) = inf;
@@ -491,8 +511,8 @@ else
     lb(var.delw) = 0;
     lb(var.x) = 0;
     lb(var.x(end)) = phi;
-
-% Cplex - obj vector
+    
+    % Cplex - obj vector
     obj(var.u, 1) = 0;
     obj(var.vp) = 0;
     obj(var.w) = 0;
@@ -503,8 +523,8 @@ else
     obj(var.delp) = 0;
     obj(var.delw) = 0;
     obj(var.x) = 0;
-
-% Cplex - ctype vector
+    
+    % Cplex - ctype vector
     ctype(var.u) = 'C';
     ctype(var.vp) = 'C';
     ctype(var.w) = 'C';
@@ -515,49 +535,49 @@ else
     ctype(var.delp) = 'C';
     ctype(var.delw) = 'C';
     ctype(var.x) = 'C';
-
-% Cplex - sense of the optimization
+    
+    % Cplex - sense of the optimization
     sense = 'minimize';
-
-% Cplex - Introduce all data in a Cplex structure
+    
+    % Cplex - Introduce all data in a Cplex structure
     cplex = Cplex('geneMCS');
     Model = struct();
     [Model.A, Model.rhs, Model.lhs, Model.ub, Model.lb, Model.obj, Model.ctype, Model.sense] = deal(A, rhs, lhs, ub, lb, obj, ctype, sense);
     cplex.Model = Model;
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 1  -->  v >= alpha
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 0, a, 'G', alpha);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 0  -->  v <= 0
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.v(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 1, a, 'L', 0);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 1  -->  epsilon <= 0
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.eps(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 0, a, 'L', 0);
     end
-
-% Cplex Indicators
+    
+    % Cplex Indicators
     % z = 0  -->  epsilon <= M
     for ivar = 1:length(var_group.z)
         a = zeros(var.x(end), 1);
         a(var_group.eps(ivar)) = 1;
         cplex.addIndicators(var_group.z(ivar), 1, a, 'L', M);
     end
-
-% Cplex Parameters
+    
+    % Cplex Parameters
     sP = struct();
     [sP.mip.tolerances.integrality, sP.mip.strategy.heuristicfreq, sP.mip.strategy.rinsheur] = deal(integrality_tolerance, 1000, 50);
     [sP.emphasis.mip, sP.output.clonelog, sP.timelimit, sP.threads] = deal(4, -1, max(10, timelimit), numWorkers);
@@ -571,8 +591,8 @@ else
     if printLevel == 0
         cplex.DisplayFunc = [];
     end
-
-% Calculation of gMCSs
+    
+    % Calculation of gMCSs
     i = 0;
     k = 0;
     n_time = size(gmcs_time, 1);
@@ -619,7 +639,9 @@ else
                 return;
             end
         end
-        try disp(['Number of gMCS saved: ' num2str(length(gmcs))]); end
+        if printLevel > 0
+            disp(['Number of gMCS saved: ' num2str(length(gmcs))]); 
+        end
         try save('tmp.mat', 'gmcs', 'gmcs_time'); end
         try largest_gmcs = max(cellfun(@length, gmcs)); end
     end
