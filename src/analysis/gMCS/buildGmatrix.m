@@ -161,6 +161,8 @@ else
         disp('G MATRIX - STEP 4');
         showprogress(0);
     end
+    mcs = cell(n_rxns_or_and,1);
+    mcs_time = cell(n_rxns_or_and,1);
     for i = 1:n_rxns_or_and
         if printLevel >=1
             %             disp([num2str(i),' of ', num2str(n_rxns_or_and)]);
@@ -168,16 +170,17 @@ else
         end
         search_filename_3 = [tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat'];
         if exist(search_filename_3,'file')
-            load(search_filename_3);
+            load(search_filename_3, 'act_mcs', 'act_mcs_time');
             mcs{i, 1} = act_mcs;
+            mcs_time{i,1} = act_mcs_time;
         else
             act_model = models_or_and{i};
-            nbio = find(act_model.c);
+            % nbio = find(act_model.c);
             rxns = act_model.rxns;
             tmp = repmat({'DM_'}, length(rxns), 1);
             DM = cellfun(@strfind, rxns, tmp, 'UniformOutput', false);
             DM = ~cellfun(@isempty, DM);
-            n_DM = sum(DM);
+            %  n_DM = sum(DM);
             DM = rxns(find(DM));
             %             options.rxn_set = DM;
             % %             options.timelimit = timelimit;
@@ -188,6 +191,7 @@ else
                 'rxn_set', DM,...
                 'timelimit', timelimit,...
                 'target_b', target_b,...
+                'forceLength', 1,...
                 'printLevel', 0);
             mcs{i, 1} = act_mcs;
             mcs_time{i, 1} = act_mcs_time;
@@ -197,79 +201,25 @@ else
     save(search_filename_2, 'mcs', 'mcs_time');
 end
 
-% % time_e = tic();
-% k = 0;
-% n_act_mcs = sum(cellfun(@numel, mcs));
-% G_4 = spalloc(n_act_mcs, n_rxns, n_act_mcs);
-% G_ind_4 = cell(n_act_mcs, 1);
-% for i = 1:n_rxns_or_and
-% %     load([tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat'], 'act_mcs');
-%     act_mcs = mcs{i, 1};
-%     n_act_mcs = length(act_mcs);
-%     
-%     for j = 1:n_act_mcs
-%         act_G_ind = act_mcs{j};
-%         if ~iscell(act_G_ind) && isnan(act_G_ind)
-%             error('MCS for a reaction in rxns_or_and subset is badly calculated')
-%         else
-%             act_G_ind = cellfun(@strrep, act_G_ind, repmat({'DM_'}, length(act_G_ind), 1), repmat({''}, length(act_G_ind), 1), 'UniformOutput', false);
-%             act_G_ind = cellfun(@strtok, act_G_ind, repmat({separate_isoform}, length(act_G_ind), 1), 'UniformOutput', false);
-%             k = k+1;
-% %             G_4(k, :) = zeros(1, n_rxns);
-%             G_4(k, pos_rxns_or_and(i)) = 1;
-%             G_ind_4{k, 1} = act_G_ind';
-%         end
-%     end
-% end
-% G_time(4, 1) = toc(time_e);
-
-% new way (more efficient?)
-% time_e = tic();
-% k = 0;
-n_act_mcs = sum(cellfun(@numel, mcs));
-
-% G_ind_4_bis = cell(n_act_mcs, 1);
-% all_act_mcs = cell(n_rxns_or_and,1);
 
 % all mcs for the reactions are stored in mcs array
 G_ind_4 = vertcat(mcs{:});
 G_ind_4 = cellfun(@transpose, G_ind_4, 'UniformOutput', false);
 G_ind_4 = cellfun(@strrep, G_ind_4, repmat({'DM_'}, length(G_ind_4), 1), repmat({''}, length(G_ind_4), 1), 'UniformOutput', false);
-G_ind_4 = cellfun(@strtok, G_ind_4, repmat({separate_isoform}, length(G_ind_4), 1), 'UniformOutput', false); 
+G_ind_4 = cellfun(@strtok, G_ind_4, repmat({separate_isoform}, length(G_ind_4), 1), 'UniformOutput', false);
 G_ind_4 = cellfun(@sort, G_ind_4, 'UniformOutput', false);
-% G_ind_4_bis{end}
 
+n_act_mcs = sum(cellfun(@numel, mcs));
 G_4 = spalloc(n_act_mcs, n_rxns, n_act_mcs);
 G_4(sub2ind(size(G_4),(1:length(G_ind_4))',repelem(pos_rxns_or_and,cellfun(@numel, mcs)))) = 1;
-
-% isequal(G_ind_4_bis, G_ind_4)
-% isequal(G_4_bis, G_4)
-
-
-% n_act_mcs = length(act_mcs);
-% for j = 1:n_act_mcs
-%     act_G_ind = act_mcs{j};
-%     if ~iscell(act_G_ind) && isnan(act_G_ind)
-%         error('MCS for a reaction in rxns_or_and subset is badly calculated')
-%     else
-%         act_G_ind = cellfun(@strrep, act_G_ind, repmat({'DM_'}, length(act_G_ind), 1), repmat({''}, length(act_G_ind), 1), 'UniformOutput', false);
-%         act_G_ind = cellfun(@strtok, act_G_ind, repmat({separate_isoform}, length(act_G_ind), 1), 'UniformOutput', false);
-%         k = k+1;
-%         G_4_bis(k, :) = zeros(1, n_rxns);
-%         G_4_bis(k, pos_rxns_or_and(i)) = 1;
-%         G_ind_4_bis{k, 1} = act_G_ind';
-%     end
-% end
-
 G_time(4, 1) = toc(time_e);
-% G_time
 
 
 % Delete isoforms in order to work at the gene level
 time_f = tic;
 if ~isempty(separate_isoform)
     G_ind_1 = cellfun(@strtok, G_ind_1, repmat({separate_isoform}, length(G_ind_1), 1), 'UniformOutput', false);
-
+    
     n_KO_2 = length(G_ind_2);
     for i = 1:n_KO_2
         act_G_ind_2 = G_ind_2{i};
@@ -283,17 +233,6 @@ end
 if printLevel >=1
     disp('G MATRIX - Delete Repeats');
 end
-% tmp_G = [];
-% try tmp_G = [tmp_G; G_1]; end
-% try tmp_G = [tmp_G; G_2]; end
-% try tmp_G = [tmp_G; G_3]; end
-% try tmp_G = [tmp_G; G_4]; end
-% tmp_G_ind = [];
-% try tmp_G_ind = [tmp_G_ind; G_ind_1]; end
-% try tmp_G_ind = [tmp_G_ind; G_ind_2]; end
-% try tmp_G_ind = [tmp_G_ind; G_ind_3]; end
-% try tmp_G_ind = [tmp_G_ind; G_ind_4]; end
-% n_tmp_G_ind = length(tmp_G_ind);
 tmp_G = spalloc(0,n_rxns,0);
 tmp_G = [tmp_G; G_1];
 tmp_G = [tmp_G; G_2];
@@ -308,34 +247,70 @@ n_tmp_G_ind = length(tmp_G_ind);
 
 % k = 0;
 clear G G_ind % no existen, lo comento
+
 % G = spalloc(0,n_rxns,0);
 % G_ind = cell(0,1);
-% for i = 1:n_tmp_G_ind
-%     if i == 1
-k = 1;
-G(k, :) = tmp_G(1, :);
-if ~iscell(tmp_G_ind{1})
-    G_ind{k, 1} = tmp_G_ind(1);
-else
-    G_ind{k, 1} = sort(tmp_G_ind{1});
-end
-for i = 2:n_tmp_G_ind
+%
+% tic
+% G2 = spalloc(0,n_rxns,0);
+% G_ind_2 = cell(0,1);
+% k = 1;
+% G2(k, :) = tmp_G(1, :);
+% if ~iscell(tmp_G_ind{1})
+%     G_ind_2{k, 1} = tmp_G_ind(1);
+% else
+%     G_ind_2{k, 1} = sort(tmp_G_ind{1});
+% end
+% for i = 2:n_tmp_G_ind
+%     if ~iscell(tmp_G_ind{i})
+%         act_G_ind = tmp_G_ind(i);
+%     else
+%         act_G_ind = sort(tmp_G_ind{i});
+%     end
+%
+%     pos_equal = cellfun(@isequal, G_ind_2, repmat({act_G_ind}, length(G_ind_2), 1));
+%     if sum(pos_equal) > 0
+%         G2(pos_equal, :) = G2(pos_equal, :) + tmp_G(i, :);
+%     else
+%         k = k+1;
+%         G2(k, :) = tmp_G(i, :);
+%         G_ind_2{k, 1} = act_G_ind;
+%     end
+% end
+% toc
+% tic
+% aggregate duplicates
+for i = 1:n_tmp_G_ind
     if ~iscell(tmp_G_ind{i})
-        act_G_ind = tmp_G_ind(i);
+        tmp_G_ind{i,1} = sort(tmp_G_ind(i));
     else
-        act_G_ind = sort(tmp_G_ind{i});
+        tmp_G_ind{i,1} = sort(tmp_G_ind{i});
     end
-    
-    pos_equal = cellfun(@isequal, G_ind, repmat({act_G_ind}, length(G_ind), 1));
-    if sum(pos_equal) > 0
-        G(pos_equal, :) = G(pos_equal, :) + tmp_G(i, :);
-    else
-        k = k+1;
-        G(k, :) = tmp_G(i, :);
-        G_ind{k, 1} = act_G_ind;
-    end
-    %     end
 end
+tmp_G_ind_txt = cellfun(@cell2mat, tmp_G_ind, 'UniformOutput', false);
+[tmp_G_ind_txt_unique, IDX_tmp_G_ind,IDX_G_ind] = unique(tmp_G_ind_txt, 'stable');
+
+G = spalloc(length(tmp_G_ind_txt_unique),n_rxns,nnz(tmp_G));
+for i = 1:length(IDX_G_ind)
+    G(IDX_G_ind(i),:) = G(IDX_G_ind(i),:) + tmp_G(i,:);
+end
+G_ind = tmp_G_ind(IDX_tmp_G_ind);
+
+clear tmp_G_ind_txt tmp_G_ind_txt_unique IDX_tmp_G_ind IDX_G_ind
+% toc
+% n_genes_KO = cellfun(@length, G_ind_2);
+% [n_genes_KO, ind] = sort(n_genes_KO, 'ascend');
+% G_ind_2 = G_ind_2(ind);
+% G2 = G2(ind, :);
+%
+% n_genes_KO = cellfun(@length, G_ind);
+% [n_genes_KO, ind] = sort(n_genes_KO, 'ascend');
+% G_ind = G_ind(ind);
+% G = G(ind, :);
+% sum(sum(abs(G-G2)))
+% isequal(G, G2)
+% isequal(G_ind, G_ind_2)
+
 
 % Fill the G matrix with reactions which are knocked out by a given KO
 % without being a gMCS
@@ -344,20 +319,137 @@ n_genes_KO = cellfun(@length, G_ind);
 G_ind = G_ind(ind);
 G = G(ind, :);
 n_G_ind = length(G_ind);
+
+G1 = G;
+G2 = G;
+G3 = G;
+
+
+
+
+
+
+
+
+
+time2 = tic();
+k = 0;
+related2 = zeros(0,2);
+for i = 1:max(n_genes_KO)
+    pos = find(n_genes_KO == i);
+    pos_no = find(n_genes_KO > i);
+    if isempty(pos)
+        continue
+    end
+    if printLevel>=2 || true
+        disp(['removing duplicates: ' num2str(i) ' of ' num2str(max(n_genes_KO))])
+    end
+    n_greater_G_ind = length(pos);
+%     equal_data = cellfun(@(c) cellfun(@(d)ismember(c, d), G_ind(pos_no), 'UniformOutput', false), G_ind(pos), 'UniformOutput', false);
+%     tic
+%     con_pos = cellfun(@(c) cellfun(@sum, c, 'UniformOutput', false), equal_data, 'UniformOutput', false );
+%     con_pos2 = cellfun(@(c) cell2mat(c), con_pos, 'UniformOutput', false);
+%     data2 = cellfun(@(c) find(c > i-1), con_pos2, 'UniformOutput', false);
+%     pos_data2 = find(~cellfun(@isempty,data2));
+%     toc
+    
+%     tic
+    equal_data = cellfun(@(c) cell2mat(cellfun(@(d) all(ismember(c, d)), G_ind(pos_no), 'UniformOutput', false)), G_ind(pos), 'UniformOutput', false);
+
+%     con_pos3 = cellfun(@(c) cell2mat(cellfun(@all, c, 'UniformOutput', false)), equal_data, 'UniformOutput', false );
+    data2 = cellfun(@find, equal_data, 'UniformOutput', false );
+    pos_data2 = find(~cellfun(@isempty,data2));
+%     toc
+    
+    
+    for j = 1:length(pos_data2)
+        idx_pos_no = pos_no(cell2mat(data2(pos_data2(j))));
+        idx_pos = pos(pos_data2(j));
+        % add information from the related genes
+        G2(idx_pos_no, :) =  G2(idx_pos_no, :) + G2(idx_pos,:);
+        % generate a table with relationships
+        related2(k + (1:length(idx_pos_no)), 1) = idx_pos_no;
+        related2(k + (1:length(idx_pos_no)), 2) = idx_pos;
+        k = size(related2,1);
+    end
+end
+time2 = toc(time2)
+G2 = double(G2>0);
+
+
+time3 = tic();
+k = 0;
+related3 = zeros(0,2);
+
+
+for i = 1:max(n_genes_KO)
+    pos = find(n_genes_KO == i);
+    pos_no = find(n_genes_KO > i);
+    if isempty(pos)
+        continue
+    end
+    if printLevel>=2 || true
+        disp(['removing duplicates: ' num2str(i) ' of ' num2str(max(n_genes_KO))])
+    end
+    n_greater_G_ind = length(pos);
+%     equal_data = cellfun(@(c) cellfun(@(d)ismember(c, d), G_ind(pos_no), 'UniformOutput', false), G_ind(pos), 'UniformOutput', false);
+%     tic
+%     con_pos = cellfun(@(c) cellfun(@sum, c, 'UniformOutput', false), equal_data, 'UniformOutput', false );
+%     con_pos2 = cellfun(@(c) cell2mat(c), con_pos, 'UniformOutput', false);
+%     data2 = cellfun(@(c) find(c > i-1), con_pos2, 'UniformOutput', false);
+%     pos_data2 = find(~cellfun(@isempty,data2));
+%     toc
+    
+%     tic
+    equal_data = cellfun(@(c) cell2mat(cellfun(@(d) all(ismember(c, d)), G_ind(pos_no), 'UniformOutput', false)), G_ind(pos), 'UniformOutput', false);
+
+%     con_pos3 = cellfun(@(c) cell2mat(cellfun(@all, c, 'UniformOutput', false)), equal_data, 'UniformOutput', false );
+    data2 = cellfun(@find, equal_data, 'UniformOutput', false );
+    pos_data2 = find(~cellfun(@isempty,data2));
+%     toc
+    
+    
+    for j = 1:length(pos_data2)
+        idx_pos_no = pos_no(cell2mat(data2(pos_data2(j))));
+        idx_pos = pos(pos_data2(j));
+        % add information from the related genes
+        G2(idx_pos_no, :) =  G2(idx_pos_no, :) + G2(idx_pos,:);
+        % generate a table with relationships
+        related3(k + (1:length(idx_pos_no)), 1) = idx_pos_no;
+        related3(k + (1:length(idx_pos_no)), 2) = idx_pos;
+        k = size(related2,1);
+    end
+end
+time3 = toc(time3)
+G3 = double(G3>0);
+
+
+
+
+
+
+
+
+tic
 for i = 1:n_G_ind
+    % for i = 1:100
+    %     tic
     act_G_ind = G_ind{i};
     n_act_G_ind = length(act_G_ind);
     pos = find(n_genes_KO > n_act_G_ind);
     greater_G_ind = G_ind(pos);
     n_greater_G_ind = length(pos);
     for j = 1:n_greater_G_ind
-        if sum(ismember(G_ind{pos(j)}, act_G_ind)) == n_act_G_ind
-            G(pos(j), :) = G(pos(j), :) + G(i, :);
+        %         if sum(ismember(G_ind{pos(j)}, act_G_ind)) == n_act_G_ind
+        if all(ismember( act_G_ind, G_ind{pos(j)}))
+            G1(pos(j), :) = G1(pos(j), :) + G1(i, :);
         end
     end
 end
-G = double(G>0);
+time1(1,1) = toc;
+G1 = double(G1>0);
 
+tic
 % Check the interconnections between KOs
 if printLevel >=1
     disp('G MATRIX - Check Relations');
@@ -383,6 +475,15 @@ for i = 2:n_G_ind
         end
     end
 end
+related1 = related;
+time1(1,2) = toc;
+
+
+
+[isequal(G1, G2) isequal(sort(related1), sort(related2)) time1 time2]
+
+
+
 
 if size(related)>0
     %     if exist('related', 'var')
