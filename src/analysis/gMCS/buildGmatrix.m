@@ -328,6 +328,78 @@ G3 = G;
 
 
 
+time3_raw = tic();
+k = 0;
+related3 = zeros(0,2);
+tic
+% generate matrix that relates genes and G_ind
+Gind2genes_genes = unique([G_ind{:}]);
+Gind2genes_mat = spalloc(length(G_ind),length(Gind2genes_genes), sum(cellfun(@length,G_ind)));
+for i = 1:length(G_ind)
+    Gind2genes_mat(i,ismember(Gind2genes_genes, G_ind{i})) = 1;
+end
+toc
+% use matrix to search G_inds that contains lower order G_inds
+for i = 1:n_G_ind
+    % for i = 1:100
+    %     tic
+    act_G_ind = G_ind{i};
+    n_act_G_ind = length(act_G_ind);
+    pos = find(n_genes_KO > n_act_G_ind);
+%     greater_G_ind = G_ind(pos);
+%     n_greater_G_ind = length(pos);
+
+    pos = pos(mean(Gind2genes_mat(pos,ismember(Gind2genes_genes,act_G_ind)),2)==1);
+    
+    for j = 1:length(pos)
+        %         if sum(ismember(G_ind{pos(j)}, act_G_ind)) == n_act_G_ind
+%         if all(ismember( act_G_ind, G_ind{pos(j)}))
+            G3(pos(j), :) = G3(pos(j), :) + G3(i, :);
+%         end
+    end
+end
+time3(1,1) = toc(time3_raw);
+G3 = double(G3>0);
+
+tic
+% Check the interconnections between KOs
+if printLevel >=1
+    disp('G MATRIX - Check Relations');
+end
+k = 0;
+n_genes_KO = cellfun(@length, G_ind);
+related3 = zeros(0,2);
+for i = 2:n_G_ind
+    act_G_ind = G_ind(i);
+    n_act_G_ind = length(act_G_ind{:});
+    pos = find(n_genes_KO < n_act_G_ind);
+    if ~isempty(pos)
+        pos = pos(end);
+        for j = 1:pos
+            act_G_ind_2 = G_ind(j);
+            tmp = ismember(act_G_ind{:}, act_G_ind_2{:});
+            n_act_G_ind_2 = length(act_G_ind_2{:});
+            if sum(tmp) == n_act_G_ind_2
+                k = k+1;
+                related3(k, 1) = i;
+                related3(k, 2) = j;
+            end
+        end
+    end
+end
+% related3 = related;
+time3(1,2) = toc(time3_raw)
+G3 = double(G3>0);
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -377,51 +449,6 @@ time2 = toc(time2)
 G2 = double(G2>0);
 
 
-time3 = tic();
-k = 0;
-related3 = zeros(0,2);
-
-
-for i = 1:max(n_genes_KO)
-    pos = find(n_genes_KO == i);
-    pos_no = find(n_genes_KO > i);
-    if isempty(pos)
-        continue
-    end
-    if printLevel>=2 || true
-        disp(['removing duplicates: ' num2str(i) ' of ' num2str(max(n_genes_KO))])
-    end
-    n_greater_G_ind = length(pos);
-%     equal_data = cellfun(@(c) cellfun(@(d)ismember(c, d), G_ind(pos_no), 'UniformOutput', false), G_ind(pos), 'UniformOutput', false);
-%     tic
-%     con_pos = cellfun(@(c) cellfun(@sum, c, 'UniformOutput', false), equal_data, 'UniformOutput', false );
-%     con_pos2 = cellfun(@(c) cell2mat(c), con_pos, 'UniformOutput', false);
-%     data2 = cellfun(@(c) find(c > i-1), con_pos2, 'UniformOutput', false);
-%     pos_data2 = find(~cellfun(@isempty,data2));
-%     toc
-    
-%     tic
-    equal_data = cellfun(@(c) cell2mat(cellfun(@(d) all(ismember(c, d)), G_ind(pos_no), 'UniformOutput', false)), G_ind(pos), 'UniformOutput', false);
-
-%     con_pos3 = cellfun(@(c) cell2mat(cellfun(@all, c, 'UniformOutput', false)), equal_data, 'UniformOutput', false );
-    data2 = cellfun(@find, equal_data, 'UniformOutput', false );
-    pos_data2 = find(~cellfun(@isempty,data2));
-%     toc
-    
-    
-    for j = 1:length(pos_data2)
-        idx_pos_no = pos_no(cell2mat(data2(pos_data2(j))));
-        idx_pos = pos(pos_data2(j));
-        % add information from the related genes
-        G2(idx_pos_no, :) =  G2(idx_pos_no, :) + G2(idx_pos,:);
-        % generate a table with relationships
-        related3(k + (1:length(idx_pos_no)), 1) = idx_pos_no;
-        related3(k + (1:length(idx_pos_no)), 2) = idx_pos;
-        k = size(related2,1);
-    end
-end
-time3 = toc(time3)
-G3 = double(G3>0);
 
 
 
@@ -449,7 +476,7 @@ end
 time1(1,1) = toc;
 G1 = double(G1>0);
 
-tic
+% tic
 % Check the interconnections between KOs
 if printLevel >=1
     disp('G MATRIX - Check Relations');
