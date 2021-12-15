@@ -327,7 +327,7 @@ end
 final_filename = [pwd filesep 'G_' model_name '.mat'];
 G_time(5, 1) = toc(time_f)+ini_time;
 G_rxns = model.rxns;
-save(final_filename, 'G', 'G_ind', 'G_rxns', 'related', 'n_genes_KO', 'G_time');
+save(final_filename, 'G', 'G_ind', 'G_rxns', 'related', 'n_genes_KO', 'G_time', 'separate_isoform');
 if printLevel >=1
     disp('The G Matrix has been successfully calculated');
 end
